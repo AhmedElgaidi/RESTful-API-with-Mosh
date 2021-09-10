@@ -1,0 +1,190 @@
+# what is authentication and authorization ?
+- Authentication => are you the person you claim to be?
+- Authorization => Do you have permission to do this ?
+
+// jwt
+we can use jwt to get the user
+as we can generate jwt and save it to the response headers and decode it once we need to know the id of user as we used it as  a payload to generate the token.
+
+# To hash passwords, use bcrypt:
+// Hashing passwords
+const salt = await bcrypt.genSalt(10);
+const hashed = await bcrypt.hash(‘1234’, salt);
+
+// Validating passwords
+const isValid = await bcrypt.compare(‘1234’, hashed);
+
+- A JSON Web Token (JWT) is a JSON object encoded as a long string. We use
+them to identify users. It’s similar to a passport or driver’s license. It includes a
+few public properties about a user in its payload. These properties cannot be
+tampered because doing so requires re-generating the digital signature.
+
+- When the user logs in, we generate a JWT on the server and return it to the
+client. We store this token on the client and send it to the server every time we
+need to call an API endpoint that is only accessible to authenticated users.
+
+- To generate JSON Web Tokens in an Express app use jsonwebtoken package.
+// Generating a JWT
+const jwt = require(‘jsonwebtoken’);
+const token = jwt.sign({ _id: user._id}, ‘privateKey’);
+
+- Never store private keys and other secrets in your codebase. Store them in
+environment variables. Use the config package to read application settings
+stored in environment variables.
+
+- When appropriate, encapsulate logic in Mongoose models:
+// Adding a method to a Mongoose model
+userSchema.methods.generateAuthToken = function() {
+}
+const token = user.generateAuthToken();
+
+- Implement authorization using a middleware function. Return a 401 error
+(unauthorized) if the client doesn’t send a valid token. Return 403 (forbidden) if
+the user provided a valid token but is not allowed to perform the given operation.
+
+- You don’t need to implement logging out on the server. Implement it on the client
+by simply removing the JWT from the client.
+for example by usein fetch
+in the header part make it 'x-auth-token': ' '
+note!: not 'x-auth-token': ''
+
+- Do not store a JWT in plain text in a database. This is similar to storing users’
+passports or drivers license in a room. Anyone who has access to that room can
+steal these passports. Store JWTs on the client. If you have a strong reason for
+storing them on the server, make sure to encrypt them before storing them in a
+database.
+
+# Error handeling and logging
+- Always handle the errors and log them
+- Alwasy use try/ catch blocks, especaily if you are using async/ await
+- But, be carefull, because, you need to handel and log the error on every controll we created
+so, we need implement it in a one place, and Express offers this as a middleware
+
+app.use((err, req, res, next) => {
+    // loging logic
+
+    // error handling logic
+    // 500 means internal error
+    res.status(500).send("something goes wrong.)
+});
+Note!: we need to put this at the bottom of all our application  middelwares at app.js
+we now just need to put "next(error)" in every catch block.
+But of course it's not good thing, as the code would be repetitve and noisy, so we can create a function and makes it wrape our route handler and that's it.
+
+function asyncMiddleware(handler) {
+    return async (req, res, next) => {
+        try {
+            await handler(req, res);
+        } catch(error) {
+            next(error)
+        }
+    }
+}
+Now, we just need to refrence to this function in our route files and makes it wrape every controller we have
+But, the problem now is we made our route files bigger and not easy to read, so there is a package can do this for us called "express-async-errors"
+used as follows:
+write this require line in app.js and that's it + midlleware on line 63
+require('express-async-errors');
+That's good for handling async errors, but if our logic doesn't work with it, we could return to the previous approach.
+
+# Now let's focus on logging:
+- there is a package called "winston"
+In the app.js, require it and then
+winston.add(winston.transports.File, {
+    filename: 'my_logs.log'
+})
+And then in our last middleware we created (63)
+first we need to know, that there are many loging levels in this package such as: (respectively)
+- error
+- warn
+- info
+- verbose
+- debug
+- silly
+so, we use it as follows
+winston.log('error', err.message);
+that's it!
+Now in any place in our controllers, it we throw errors there, then it'll be logged in the file
+throw new Eror('this an error message');
+
+All of that was for logggin errors for our express app code, but what if we want to log mongodb errors?
+there is a package called "winston-mongodb", help in doing so!
+we require it, but we don't need to store the value in a constant 
+requir('winston-mongodb')
+and then
+winston.add(winston.transports.MongoDB, {
+    db:'our monogDB URI',
+    level: 'info' // that means it willl log the error, warn, adn info messages
+})
+
+# Lets' recape
+Handling and Logging Errors
+
+So, in this section, you learned that:
+- Our applications don’t run in an ideal world. Unexpected errors can happen as a
+result of bugs in our code or issues in the running environment. For example, our
+MongoDB server may shut down, or a remote HTTP service we call may go
+down.
+- As a good developer, you should count for these unexpected errors, log them and
+return a proper error to the client.
+- Use the Express error middleware to catch any unhandled exceptions in the
+“request processing pipeline”.
+- Register the error middleware after all the existing routes:
+app.use(function(err, req, res, next) {
+// Log the exception and return a friendly error to the client.
+res.status(500).send(‘Something failed’);
+});
+- To pass control to the error middleware, wrap your route handler code in a try/
+catch block and call next().
+
+try {
+    const genres = await Genre.find();
+...
+}catch(ex) {
+    next(ex);
+});
+
+- Adding a try/catch block to every route handler is repetitive and time consuming.
+Use express-async-errors module. This module will monkey-patch your route
+handlers at runtime. It’ll wrap your code within a try/catch block and pass
+unhandled errors to your error middleware.
+
+- To log errors use winston.
+
+- Winston can log errors in multiple transports. A transport is where your log is
+stored.
+
+- The core transports that come with Winston are Console, File and Http. There
+are also 3rd-party transports for storing logs in MongoDB, CouchDB, Redis and
+Loggly.
+
+- The error middleware in Express only catches exceptions in the request
+processing pipeline. Any errors happening during the application startup (eg
+connecting to MongoDB) will be invisible to Express.
+
+- Use process.on(‘uncaughtException’) to catch unhandled exceptions, and
+process.on(‘unhandledRejection’) to catch rejected promises.
+
+- As a best practice, in the event handlers you pass to process.on(), you should
+log the exception and exit the process, because your process may be in an
+unclean state and it may result in more issues in the future. It’s better to restart
+the process in a clean state. In production, you can use a process manager to
+automatically restart a Node process. You’ll learn about that later in the course.
+
+# preparing for deployment
+use these pacakes:
+- helmet
+- compression
+
+Another thing is to go to pacakge.json and put your used node version in the engine document.
+
+- In heroku server = dyno
+so, when we want to scale our website, we need to explicitly these environment variables on each dyno.
+
+- Setting enviroment variables in heroku, we could either got ot the website and add them or form the heroku CLI as follows
+"heroku config:set variable_name=variable_value", that's it.
+we can see all our environment variables by this command
+"heroku config"
+
+# Now we need to deploy our local mongodb in the clould, if we don't want to use mongodb atlas
+- Go to heroku addons page and choose "mlab", but it will force you to add your credit card, so alternatively, go to the mlab main site and choose the sandbox plan (offers 500mb) and that's more than enough. 
